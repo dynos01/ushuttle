@@ -8,7 +8,7 @@ The program is in C-S architecture: a client program runs on the local machine, 
 This program is currently a hobby project and only serves my own needs, however, any issue report or recommendation is welcomed.
 
 ## Build
-Prebuilt statically linked binaries are available. In the meantime, you can build your own copy in the standard Rusty way:
+Prebuilt binaries are available in the release page. In the meantime, you can build your own copy in the standard Rusty way:
 
 ```
 git clone https://github.com/dynos01/ushuttle

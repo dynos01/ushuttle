@@ -539,6 +539,8 @@ dependencies = [
 [[package]]
 name = "proxie"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1b08d044e87235a9245b9a802bf0a76586f638bc4cb61ab1c5fb8392772841b"
 dependencies = [
  "async-trait",
  "base64",
