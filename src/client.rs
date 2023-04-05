@@ -2,15 +2,14 @@ use std::{
     error::Error,
     result,
     net::SocketAddr,
-    sync::Arc,
+    sync::{Arc, Mutex},
     collections::HashMap,
     ops::Sub,
-    sync::Mutex,
 };
 use log::{debug, info, warn};
 use tokio::{
     net::{UdpSocket, TcpStream, tcp::{OwnedWriteHalf, OwnedReadHalf}},
-    sync::{oneshot::{self, error::TryRecvError}},
+    sync::oneshot::{self, error::TryRecvError},
     io::AsyncWriteExt,
     time::{sleep, Instant, Duration},
 };
