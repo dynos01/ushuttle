@@ -3,14 +3,14 @@ use std::{
     result,
     net::{SocketAddr, ToSocketAddrs},
     collections::HashMap,
-    sync::Arc,
+    sync::{Arc, Mutex},
     ops::Sub,
 };
 use log::{debug, info, warn};
 use tokio::{
     net::{UdpSocket, TcpListener, tcp::{OwnedReadHalf, OwnedWriteHalf}},
     io::AsyncWriteExt,
-    sync::Mutex,
+    sync::Mutex as TokioMutex,
     time::{sleep, Instant, Duration},
 };
 use flume::{Sender, Receiver};
@@ -36,7 +36,12 @@ pub(crate) async fn start_server(args: Args) -> Result<()> {
     };
 
     tokio::spawn(async move {
-        cleaner(timeout).await;
+        loop {
+            match cleaner(timeout).await {
+                Ok(()) => {},
+                Err(e) => warn!("Cleaner exited unexpectedly: {e}"),
+            };
+        }
     });
 
     loop {
@@ -61,7 +66,7 @@ async fn process(
     source: SocketAddr,
     timeout: u64
 ) -> Result<()> {
-    let stream_write = Arc::new(Mutex::new(stream_write));
+    let stream_write = Arc::new(TokioMutex::new(stream_write));
     let packet = crate::protocol::get_packet(&mut stream_read, timeout).await?;
 
     match crate::protocol::validate_handshake(&packet) {
@@ -87,15 +92,14 @@ async fn process(
         };
 
         let tx = {
-            let mut workers = workers.lock().await;
             let stream_write = stream_write.clone();
 
-            match workers.get(&source_hash) {
+            match workers.lock()?.get(&source_hash) {
                 Some(x) => {
                     let res = x.0.clone();
                     let mut x = x.clone();
                     x.1 = Instant::now();
-                    workers.insert(source_hash, x);
+                    workers.lock()?.insert(source_hash, x);
                     res
                 },
                 None => {
@@ -106,7 +110,7 @@ async fn process(
                             Err(e) => warn!("{e}"),
                         };
                     });
-                    workers.insert(source_hash, (tx_send.clone(), Instant::now()));
+                    workers.lock()?.insert(source_hash, (tx_send.clone(), Instant::now()));
                     tx_send
                 }
             }
@@ -118,7 +122,7 @@ async fn process(
 
 async fn spawn_relay_worker(
     rx: Receiver<Vec<u8>>,
-    stream_write: Arc<Mutex<OwnedWriteHalf>>,
+    stream_write: Arc<TokioMutex<OwnedWriteHalf>>,
     source_hash: u32
 ) -> Result<()> {
     let remote = match crate::REMOTE.get() {
@@ -159,7 +163,7 @@ async fn spawn_relay_worker(
 }
 
 async fn spawn_relay_worker_recv(
-    stream_write: Arc<Mutex<OwnedWriteHalf>>,
+    stream_write: Arc<TokioMutex<OwnedWriteHalf>>,
     socket: Arc<UdpSocket>,
     source_hash: u32
 ) -> Result<()> {
@@ -178,7 +182,7 @@ async fn spawn_relay_worker_recv(
     }
 }
 
-async fn cleaner(timeout: u64) {
+async fn cleaner(timeout: u64) -> Result<()> {
     loop {
         sleep(Duration::from_secs(timeout)).await;
 
@@ -189,7 +193,7 @@ async fn cleaner(timeout: u64) {
 
         {
             let now = Instant::now();
-            let mut workers = workers.lock().await;
+            let mut workers = workers.lock()?;
             let length_orig = workers.len();
 
             workers.retain(|_, (_, last)| {

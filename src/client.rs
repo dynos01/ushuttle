@@ -5,11 +5,12 @@ use std::{
     sync::Arc,
     collections::HashMap,
     ops::Sub,
+    sync::Mutex,
 };
 use log::{debug, info, warn};
 use tokio::{
     net::{UdpSocket, TcpStream, tcp::{OwnedWriteHalf, OwnedReadHalf}},
-    sync::{Mutex, oneshot::{self, error::TryRecvError}},
+    sync::{oneshot::{self, error::TryRecvError}},
     io::AsyncWriteExt,
     time::{sleep, Instant, Duration},
 };
@@ -83,7 +84,14 @@ pub(crate) async fn start_client(args: Args) -> Result<()> {
     let socket_clone = socket.clone();
     let proxy_clone = proxy.clone();
     tokio::spawn(async move {
-        cleaner(timeout, socket_clone, proxy_clone).await;
+        loop {
+            let socket_clone = socket_clone.clone();
+            let proxy_clone = proxy_clone.clone();
+            match cleaner(timeout, socket_clone, proxy_clone).await {
+                Ok(()) => {},
+                Err(e) => warn!("Cleaner exited unexpectedly: {e}"),
+            };
+        }
     });
 
     let connections = match CONNECTIONS.get() {
@@ -96,22 +104,17 @@ pub(crate) async fn start_client(args: Args) -> Result<()> {
         None => unreachable!(),
     };
 
-    {
-        let mut connections = connections.lock().await;
-        let mut shutdown = shutdown.lock().await;
-
-        for _ in 0..n_connection {
-            let (tx, rx) = flume::unbounded();
-            connections.push(tx);
-            loop {
-                let (shutdown_tx, shutdown_rx) = oneshot::channel();
-                shutdown.push(shutdown_rx);
-                match spawn_connection(rx.clone(), socket.clone(), proxy.clone(), shutdown_tx, timeout).await {
-                    Ok(()) => break,
-                    Err(e) => warn!("{e}"),
-                };
-                sleep(Duration::from_secs(1)).await;
-            }
+    for _ in 0..n_connection {
+        let (tx, rx) = flume::unbounded();
+        connections.lock()?.push(tx);
+        loop {
+            let (shutdown_tx, shutdown_rx) = oneshot::channel();
+            shutdown.lock()?.push(shutdown_rx);
+            match spawn_connection(rx.clone(), socket.clone(), proxy.clone(), shutdown_tx, timeout).await {
+                Ok(()) => break,
+                Err(e) => warn!("{e}"),
+            };
+            sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -128,7 +131,7 @@ pub(crate) async fn start_client(args: Args) -> Result<()> {
                 Some(source_map) => source_map,
                 None => unreachable!(),
             };
-            let mut source_map = source_map.lock().await;
+            let mut source_map = source_map.lock()?;
 
             match source_map.get(&source_hash) {
                 Some(x) => {
@@ -162,39 +165,34 @@ pub(crate) async fn start_client(args: Args) -> Result<()> {
             None => unreachable!(),
         };
 
-        {
-            let mut connections = connections.lock().await;
-            let mut shutdown = shutdown.lock().await;
+        let closed = match shutdown.lock()?[index].try_recv() {
+            Ok(_) => true,
+            Err(TryRecvError::Empty) => false,
+            Err(e) => {
+                warn!("{e}");
+                continue;
+            },
+        };
 
-            let closed = match shutdown[index].try_recv() {
-                Ok(_) => true,
-                Err(TryRecvError::Empty) => false,
+        if closed { //Try to reconnect once if the connection is dead
+            debug!("Connection {index} closed");
+            let (tx, rx) = flume::unbounded();
+            let (shutdown_tx, shutdown_rx) = oneshot::channel();
+            connections.lock()?[index] = tx;
+            shutdown.lock()?[index] = shutdown_rx;
+            match spawn_connection(rx.clone(), socket.clone(), proxy.clone(), shutdown_tx, timeout).await {
+                Ok(()) => {},
                 Err(e) => {
                     warn!("{e}");
-                    continue;
+                    continue; //Failed to connect, sending on a dead connection is meaningless
                 },
             };
-
-            if closed { //Try to reconnect once if the connection is dead
-                debug!("Connection {index} closed");
-                let (tx, rx) = flume::unbounded();
-                let (shutdown_tx, shutdown_rx) = oneshot::channel();
-                connections[index] = tx;
-                shutdown[index] = shutdown_rx;
-                match spawn_connection(rx.clone(), socket.clone(), proxy.clone(), shutdown_tx, timeout).await {
-                    Ok(()) => {},
-                    Err(e) => {
-                        warn!("{e}");
-                        continue; //Failed to connect, sending on a dead connection is meaningless
-                    },
-                };
-            }
-
-            match connections[index].send((packet, source)) {
-                Ok(()) => {},
-                Err(e) => warn!("{e}"),
-            };
         }
+
+        match connections.lock()?[index].send((packet, source)) {
+            Ok(()) => {},
+            Err(e) => warn!("{e}"),
+        };
     }
 }
 
@@ -291,7 +289,7 @@ async fn start_connection_recv(
                 Some(source_map) => source_map,
                 None => unreachable!(),
             };
-            let mut source_map = source_map.lock().await;
+            let mut source_map = source_map.lock()?;
             match source_map.get(&source_hash) {
                 Some(x) => {
                     let mut x = x.clone();
@@ -311,7 +309,7 @@ async fn start_connection_recv(
     }
 }
 
-async fn cleaner(timeout: u64, socket: Arc<UdpSocket>, proxy: Option<Proxy>) {
+async fn cleaner(timeout: u64, socket: Arc<UdpSocket>, proxy: Option<Proxy>) -> Result<()> {
     loop {
         sleep(Duration::from_secs(timeout)).await;
 
@@ -322,7 +320,7 @@ async fn cleaner(timeout: u64, socket: Arc<UdpSocket>, proxy: Option<Proxy>) {
 
         {
             let now = Instant::now();
-            let mut source_map = source_map.lock().await;
+            let mut source_map = source_map.lock()?;
             let length_orig = source_map.len();
 
             source_map.retain(|_, (_, _, last)| {
@@ -344,28 +342,25 @@ async fn cleaner(timeout: u64, socket: Arc<UdpSocket>, proxy: Option<Proxy>) {
             None => unreachable!(),
         };
 
-        {
-            let mut connections = connections.lock().await;
-            let mut shutdown = shutdown.lock().await;
+        let connections_len = connections.lock()?.len();
 
-            for index in 0..connections.len() {
-                let closed = match shutdown[index].try_recv() {
-                    Ok(_) => true,
-                    Err(TryRecvError::Empty) => false,
-                    _ => unreachable!(),
+        for index in 0..connections_len {
+            let closed = match shutdown.lock()?[index].try_recv() {
+                Ok(_) => true,
+                Err(TryRecvError::Empty) => false,
+                _ => unreachable!(),
+            };
+
+            if closed { //Try to reconnect once if the connection is dead
+                debug!("Connection {index} closed");
+                let (tx, rx) = flume::unbounded();
+                let (shutdown_tx, shutdown_rx) = oneshot::channel();
+                connections.lock()?[index] = tx;
+                shutdown.lock()?[index] = shutdown_rx;
+                match spawn_connection(rx.clone(), socket.clone(), proxy.clone(), shutdown_tx, timeout).await {
+                    Ok(()) => {},
+                    Err(e) => warn!("{e}"),
                 };
-
-                if closed { //Try to reconnect once if the connection is dead
-                    debug!("Connection {index} closed");
-                    let (tx, rx) = flume::unbounded();
-                    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-                    connections[index] = tx;
-                    shutdown[index] = shutdown_rx;
-                    match spawn_connection(rx.clone(), socket.clone(), proxy.clone(), shutdown_tx, timeout).await {
-                        Ok(()) => {},
-                        Err(e) => warn!("{e}"),
-                    };
-                }
             }
         }
     }
