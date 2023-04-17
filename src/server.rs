@@ -67,7 +67,7 @@ async fn process(
     timeout: u64
 ) -> Result<()> {
     let stream_write = Arc::new(TokioMutex::new(stream_write));
-    let packet = crate::protocol::get_packet(&mut stream_read, timeout, false).await?;
+    let packet = crate::protocol::get_packet(&mut stream_read, timeout, true).await?;
 
     match crate::protocol::validate_handshake(&packet) {
         Ok(()) => {},

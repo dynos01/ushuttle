@@ -278,7 +278,7 @@ async fn start_connection_recv(
     timeout: u64
 ) -> Result<()> {
     loop {
-        let mut packet = crate::protocol::get_packet(stream, timeout, true).await?;
+        let mut packet = crate::protocol::get_packet(stream, timeout, false).await?;
 
         let source_hash = u32::from_be_bytes([packet[0], packet[1], packet[2], packet[3]]);
         packet.drain(..4);

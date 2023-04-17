@@ -33,10 +33,10 @@ pub(crate) enum ProtocolError {
     IncompletePacket(Elapsed)
 }
 
-pub(crate) async fn get_packet(stream: &mut OwnedReadHalf, timeout: u64, client: bool) -> Result<Vec<u8>> {
+pub(crate) async fn get_packet(stream: &mut OwnedReadHalf, timeout: u64, is_handshake: bool) -> Result<Vec<u8>> {
     let mut buf = [0u8; crate::BUFFER_SIZE];
 
-    let packet_len = if client {
+    let packet_len = if !is_handshake {
         stream.read_exact(&mut buf[..2]).await?;
         u16::from_be_bytes([buf[0], buf[1]])
     } else {
