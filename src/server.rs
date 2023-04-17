@@ -67,7 +67,7 @@ async fn process(
     timeout: u64
 ) -> Result<()> {
     let stream_write = Arc::new(TokioMutex::new(stream_write));
-    let packet = crate::protocol::get_packet(&mut stream_read, timeout).await?;
+    let packet = crate::protocol::get_packet(&mut stream_read, timeout, false).await?;
 
     match crate::protocol::validate_handshake(&packet) {
         Ok(()) => {},
@@ -79,7 +79,7 @@ async fn process(
     debug!("Authentication success from {source}");
 
     loop {
-        let mut packet = crate::protocol::get_packet(&mut stream_read, timeout).await?;
+        let mut packet = crate::protocol::get_packet(&mut stream_read, timeout, false).await?;
 
         let source_hash = u32::from_be_bytes([packet[0], packet[1], packet[2], packet[3]]);
         packet.drain(..4);
@@ -94,7 +94,9 @@ async fn process(
         let tx = {
             let stream_write = stream_write.clone();
 
-            match workers.lock()?.get(&source_hash) {
+            let worker = workers.lock()?.get(&source_hash).cloned();
+
+            match worker {
                 Some(x) => {
                     let res = x.0.clone();
                     let mut x = x.clone();

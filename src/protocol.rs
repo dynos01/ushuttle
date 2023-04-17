@@ -33,26 +33,34 @@ pub(crate) enum ProtocolError {
     IncompletePacket(Elapsed)
 }
 
-pub(crate) async fn get_packet(stream: &mut OwnedReadHalf, timeout: u64) -> Result<Vec<u8>> {
+pub(crate) async fn get_packet(stream: &mut OwnedReadHalf, timeout: u64, client: bool) -> Result<Vec<u8>> {
     let mut buf = [0u8; crate::BUFFER_SIZE];
-    let packet_len: u16;
 
-    loop {
-        let len = match time::timeout(
-            Duration::from_secs(timeout),
-            stream.read_exact(&mut buf[..2])
-        ).await {
-            Ok(res) => res?,
-            Err(e) => return Err(Box::new(ProtocolError::IncompletePacket(e))),
-        };
+    let packet_len = if client {
+        stream.read_exact(&mut buf[..2]).await?;
+        u16::from_be_bytes([buf[0], buf[1]])
+    } else {
+        let packet_len: u16;
 
-        if len != 2 {
-            return Err(Box::new(ProtocolError::ConnectionError));
+        loop {
+            let len = match time::timeout(
+                Duration::from_secs(timeout),
+                stream.read_exact(&mut buf[..2])
+            ).await {
+                Ok(res) => res?,
+                Err(e) => return Err(Box::new(ProtocolError::IncompletePacket(e))),
+            };
+
+            if len != 2 {
+                return Err(Box::new(ProtocolError::ConnectionError));
+            }
+
+            packet_len = u16::from_be_bytes([buf[0], buf[1]]);
+            break;
         }
 
-        packet_len = u16::from_be_bytes([buf[0], buf[1]]);
-        break;
-    }
+        packet_len
+    };
 
     let packet_len = packet_len as usize;
 
