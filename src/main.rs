@@ -94,7 +94,7 @@ async fn main() {
         match res {
             Ok(res) => res,
             Err(e) => {
-                error!("{e}");
+                error!("Invalid key {}: {e}", args.key);
                 exit(1);
             }
         }
@@ -121,7 +121,7 @@ async fn main() {
         match server::start_server(args).await {
             Ok(()) => {},
             Err(e) => {
-                error!("{e}");
+                error!("Failed to start server: {e}");
                 exit(1);
             },
         };
@@ -131,7 +131,7 @@ async fn main() {
         match client::start_client(args).await {
             Ok(()) => {},
             Err(e) => {
-                error!("{e}");
+                error!("Failed to start client: {e}");
                 exit(1);
             },
         };

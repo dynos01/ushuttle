@@ -111,7 +111,7 @@ pub(crate) async fn start_client(args: Args) -> Result<()> {
             shutdown.lock()?.push(shutdown_rx);
             match spawn_connection(rx.clone(), socket.clone(), proxy.clone(), shutdown_tx, timeout).await {
                 Ok(()) => break,
-                Err(e) => warn!("{e}"),
+                Err(e) => warn!("Failed to establish connection: {e}"),
             };
             sleep(Duration::from_secs(1)).await;
         }
@@ -168,7 +168,7 @@ pub(crate) async fn start_client(args: Args) -> Result<()> {
             Ok(_) => true,
             Err(TryRecvError::Empty) => false,
             Err(e) => {
-                warn!("{e}");
+                warn!("Failed to receive shutdown signal: {e}");
                 continue;
             },
         };
@@ -182,7 +182,7 @@ pub(crate) async fn start_client(args: Args) -> Result<()> {
             match spawn_connection(rx.clone(), socket.clone(), proxy.clone(), shutdown_tx, timeout).await {
                 Ok(()) => {},
                 Err(e) => {
-                    warn!("{e}");
+                    warn!("Failed to establish connection: {e}");
                     continue; //Failed to connect, sending on a dead connection is meaningless
                 },
             };
@@ -190,7 +190,7 @@ pub(crate) async fn start_client(args: Args) -> Result<()> {
 
         match connections.lock()?[index].send((packet, source)) {
             Ok(()) => {},
-            Err(e) => warn!("{e}"),
+            Err(e) => warn!("Failed to send shutdown signal: {e}"),
         };
     }
 }
@@ -358,7 +358,7 @@ async fn cleaner(timeout: u64, socket: Arc<UdpSocket>, proxy: Option<Proxy>) -> 
                 shutdown.lock()?[index] = shutdown_rx;
                 match spawn_connection(rx.clone(), socket.clone(), proxy.clone(), shutdown_tx, timeout).await {
                     Ok(()) => {},
-                    Err(e) => warn!("{e}"),
+                    Err(e) => warn!("Failed to establish connection: {e}"),
                 };
             }
         }

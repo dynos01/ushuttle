@@ -23,13 +23,13 @@ const UNIX_TIMESTAMP_LENGTH: usize = 8;
 
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum ProtocolError {
-    #[error("Authentication failed")]
+    #[error("authentication failed")]
     AuthenticationError,
-    #[error("Connection failed")]
+    #[error("connection failed")]
     ConnectionError,
-    #[error("Failed to resolve host {0}")]
+    #[error("failed to resolve host {0}")]
     ResolutionError(String),
-    #[error("Failed to get complete packet: {0}")]
+    #[error("failed to get complete packet: {0}")]
     IncompletePacket(Elapsed)
 }
 

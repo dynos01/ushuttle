@@ -54,7 +54,7 @@ pub(crate) async fn start_server(args: Args) -> Result<()> {
 
             match process(stream_read, stream_write, remote, timeout).await {
                 Ok(()) => {},
-                Err(e) => warn!("{e}"),
+                Err(e) => warn!("Failed to process packet: {e}"),
             };
         });
     }
@@ -107,7 +107,7 @@ async fn process(
                     tokio::spawn(async move {
                         match spawn_relay_worker(rx_send, stream_write, source_hash).await {
                             Ok(()) => {},
-                            Err(e) => warn!("{e}"),
+                            Err(e) => warn!("Failed to start relay worker: {e}"),
                         };
                     });
                     workers.lock()?.insert(source_hash, (tx_send.clone(), Instant::now()));
@@ -150,7 +150,7 @@ async fn spawn_relay_worker(
     tokio::spawn(async move {
         match spawn_relay_worker_recv(stream_write, socket_recv, source_hash).await {
             Ok(()) => {},
-            Err(e) => warn!("{e}"),
+            Err(e) => warn!("Failed to start relay worker: {e}"),
         };
     });
 
