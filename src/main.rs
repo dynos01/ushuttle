@@ -6,7 +6,9 @@ use std::{
     env,
     process::exit,
 };
-use log::{debug, info, warn, error};
+use chrono::Local;
+use fern::colors::{Color, ColoredLevelConfig};
+use log::{debug, info, warn, error, LevelFilter, Level};
 use clap::Parser;
 use once_cell::sync::OnceCell;
 
@@ -66,16 +68,53 @@ struct Args {
     verbose: bool,
 }
 
+fn setup_logger(log_level: LevelFilter) -> Result<(), fern::InitError> {
+    let colors = ColoredLevelConfig::new()
+        .error(Color::Red)
+        .warn(Color::Yellow)
+        .info(Color::Green)
+        .debug(Color::Magenta)
+        .trace(Color::BrightBlue);
+
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "[{} {}{} {}] {}",
+                Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                colors.color(record.level()),
+                if record.level() == Level::Info || record.level() == Level::Warn {
+                    " "
+                } else {
+                    ""
+                },
+                record.target(),
+                message
+            ))
+        })
+        .level_for(env!("CARGO_PKG_NAME"), log_level)
+        .level(LevelFilter::Warn)
+        .chain(std::io::stdout())
+        .apply()?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
 
-    if args.verbose {
-        env::set_var("RUST_LOG", "debug");
+    let log_level = if args.verbose {
+        LevelFilter::Debug
     } else {
-        env::set_var("RUST_LOG", "info");
-    }
-    env_logger::init();
+        LevelFilter::Info
+    };
+
+    match setup_logger(log_level) {
+        Ok(()) => {},
+        Err(e) => {
+            eprintln!("Failed to initialize logger: {e}. ");
+            exit(1);
+        }
+    };
 
     info!("Starting {NAME} version {VERSION}");
 
