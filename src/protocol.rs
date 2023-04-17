@@ -30,7 +30,7 @@ pub(crate) enum ProtocolError {
     #[error("failed to resolve host {0}")]
     ResolutionError(String),
     #[error("failed to get complete packet: {0}")]
-    IncompletePacket(Elapsed)
+    IncompletePacket(Elapsed),
 }
 
 pub(crate) async fn get_packet(stream: &mut OwnedReadHalf, timeout: u64, is_handshake: bool) -> Result<Vec<u8>> {

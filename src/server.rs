@@ -108,8 +108,8 @@ async fn process(
                     let (tx_send, rx_send) = flume::unbounded();
                     tokio::spawn(async move {
                         match spawn_relay_worker(rx_send, stream_write, source_hash).await {
-                            Ok(()) => {},
-                            Err(e) => warn!("Failed to start relay worker: {e}"),
+                            Ok(()) => warn!("Relay worker exited unexpectedly"),
+                            Err(e) => warn!("Relay worker exited unexpectedly: {e}"),
                         };
                     });
                     workers.lock()?.insert(source_hash, (tx_send.clone(), Instant::now()));
@@ -147,15 +147,43 @@ async fn spawn_relay_worker(
     let socket = Arc::new(UdpSocket::bind(local_addr).await?);
     socket.connect(&remote_addr).await?;
 
-    let socket_recv = socket.clone();
-    let stream_write = stream_write.clone();
-    tokio::spawn(async move {
-        match spawn_relay_worker_recv(stream_write, socket_recv, source_hash).await {
+    let socket_send = socket.clone();
+    let send = tokio::spawn(async move {
+        match spawn_relay_worker_send(rx, socket_send, remote_addr).await {
             Ok(()) => {},
-            Err(e) => warn!("Failed to start relay worker: {e}"),
+            Err(e) => warn!("Relay worker exited unexpectedly: {e}"),
         };
     });
 
+    let socket_recv = socket.clone();
+    let stream_write = stream_write.clone();
+    let recv = tokio::spawn(async move {
+        match spawn_relay_worker_recv(stream_write, socket_recv, source_hash).await {
+            Ok(()) => {},
+            Err(e) => warn!("Relay worker exited unexpectedly: {e}"),
+        };
+    });
+
+    tokio::select! {
+        _ = send => {},
+        _ = recv => {},
+    };
+
+    let workers = match WORKERS.get() {
+        Some(workers) => workers,
+        None => unreachable!(),
+    };
+
+    workers.lock()?.remove(&source_hash);
+
+    Ok(())
+}
+
+async fn spawn_relay_worker_send(
+    rx: Receiver<Vec<u8>>,
+    socket: Arc<UdpSocket>,
+    remote_addr: SocketAddr,
+) -> Result<()> {
     while let Ok(packet) = rx.recv_async().await {
         debug!("Sending packet to udp://{remote_addr}, length = {}", packet.len());
         socket.send(&packet).await?;
@@ -175,12 +203,10 @@ async fn spawn_relay_worker_recv(
         let len = socket.recv(&mut buf).await?;
         let packet = crate::protocol::build_tcp_packet(buf.to_vec(), len, source_hash);
 
-        {
-            let mut stream_write = stream_write.lock().await;
-            let peer = stream_write.peer_addr()?;
-            debug!("Sending packet to tcp://{peer}, length = {len}");
-            stream_write.write_all(&packet).await?;
-        }
+        let mut stream_write = stream_write.lock().await;
+        let peer = stream_write.peer_addr()?;
+        debug!("Sending packet to tcp://{peer}, length = {len}");
+        stream_write.write_all(&packet).await?;
     }
 }
 
