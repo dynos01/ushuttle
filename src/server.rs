@@ -108,8 +108,8 @@ async fn process(
                     let (tx_send, rx_send) = flume::unbounded();
                     tokio::spawn(async move {
                         match spawn_relay_worker(rx_send, stream_write, source_hash).await {
-                            Ok(()) => warn!("Relay worker exited unexpectedly"),
-                            Err(e) => warn!("Relay worker exited unexpectedly: {e}"),
+                            Ok(()) => {},
+                            Err(e) => warn!("Relay worker failed to start: {e}"),
                         };
                     });
                     workers.lock()?.insert(source_hash, (tx_send.clone(), Instant::now()));
@@ -150,7 +150,7 @@ async fn spawn_relay_worker(
     let socket_send = socket.clone();
     let send = tokio::spawn(async move {
         match spawn_relay_worker_send(rx, socket_send, remote_addr).await {
-            Ok(()) => {},
+            Ok(()) => unreachable!(),
             Err(e) => warn!("Relay worker exited unexpectedly: {e}"),
         };
     });
@@ -159,7 +159,7 @@ async fn spawn_relay_worker(
     let stream_write = stream_write.clone();
     let recv = tokio::spawn(async move {
         match spawn_relay_worker_recv(stream_write, socket_recv, source_hash).await {
-            Ok(()) => {},
+            Ok(()) => unreachable!(),
             Err(e) => warn!("Relay worker exited unexpectedly: {e}"),
         };
     });
@@ -184,12 +184,11 @@ async fn spawn_relay_worker_send(
     socket: Arc<UdpSocket>,
     remote_addr: SocketAddr,
 ) -> Result<()> {
-    while let Ok(packet) = rx.recv_async().await {
+    loop {
+        let packet = rx.recv_async().await?;
         debug!("Sending packet to udp://{remote_addr}, length = {}", packet.len());
         socket.send(&packet).await?;
     }
-
-    Ok(())
 }
 
 async fn spawn_relay_worker_recv(
