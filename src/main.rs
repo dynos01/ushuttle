@@ -12,9 +12,6 @@ use log::{debug, info, warn, error, LevelFilter, Level};
 use clap::Parser;
 use once_cell::sync::OnceCell;
 
-const NAME: &str = "ushuttle";
-const VERSION: &str = "1.0.0";
-const DESCRIPTION: &str = "Tunnel UDP packets through TCP SOCKS5/HTTP proxy server.";
 const CONNECTIONS_DEFAULT: usize = 4;
 const CLEAN_INTERVAL_DEFAULT: u64 = 30;
 const BUFFER_SIZE: usize = 65535;
@@ -23,9 +20,9 @@ static HASHED_KEY: OnceCell<Vec<u8>> = OnceCell::new();
 static REMOTE: OnceCell<String> = OnceCell::new();
 
 #[derive(Parser)]
-#[command(name = NAME)]
-#[command(version = VERSION)]
-#[command(about = DESCRIPTION, long_about = None)]
+#[command(name = env!("CARGO_PKG_NAME"))]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(about = env!("CARGO_PKG_DESCRIPTION"), long_about = None)]
 struct Args {
     /// Run in server or client mode
     #[arg(short, long, value_name = "server|client")]
@@ -116,7 +113,7 @@ async fn main() {
         }
     };
 
-    info!("Starting {NAME} version {VERSION}");
+    info!("Starting {} version {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
     if args.verbose {
         warn!("Verbose output enabled");
