@@ -150,7 +150,7 @@ async fn spawn_relay_worker(
     let socket_send = socket.clone();
     let send = tokio::spawn(async move {
         match spawn_relay_worker_send(rx, socket_send, remote_addr).await {
-            Ok(()) => unreachable!(),
+            Ok(()) => {},
             Err(e) => warn!("Relay worker exited unexpectedly: {e}"),
         };
     });
@@ -159,7 +159,7 @@ async fn spawn_relay_worker(
     let stream_write = stream_write.clone();
     let recv = tokio::spawn(async move {
         match spawn_relay_worker_recv(stream_write, socket_recv, source_hash).await {
-            Ok(()) => unreachable!(),
+            Ok(()) => {},
             Err(e) => warn!("Relay worker exited unexpectedly: {e}"),
         };
     });
