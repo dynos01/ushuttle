@@ -344,7 +344,11 @@ async fn cleaner(timeout: u64, socket: Arc<UdpSocket>, proxy: Option<Proxy>) -> 
         let connections_len = connections.lock()?.len();
 
         for index in 0..connections_len {
-            let closed = shutdown.lock()?[index].try_recv().is_ok();
+            let closed = match shutdown.lock()?[index].try_recv() {
+                Ok(_) => true,
+                Err(TryRecvError::Empty) => false,
+                Err(TryRecvError::Closed) => true,
+            };
 
             if closed { //Try to reconnect once if the connection is dead
                 debug!("Connection {index} closed");
