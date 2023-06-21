@@ -75,6 +75,12 @@ pub(crate) fn validate_handshake(packet: &[u8]) -> Result<()> {
         Some(key) => key,
         None => unreachable!(),
     };
+
+    if packet.len() < 16 + 12 { // Reserved + nonce
+        debug!("Handshake packet too small");
+        return Err(Box::new(ProtocolError::AuthenticationError));
+    }
+
     let cipher = ChaCha20Poly1305::new_from_slice(hashed_key)?;
     let packet = &packet[16..]; //Drop reserved 16 bytes for now
     let nonce = GenericArray::clone_from_slice(&packet[..12]);
